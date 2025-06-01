@@ -1,76 +1,40 @@
-# File: redis-oom-repro/README.md
-# Redis High-Severity Failure Reproduction: OOM with `noeviction`
+# Redis OOM Failure: Write Rejection due to 'maxmemory'
 
-This project reproduces a high-severity Redis failure where Redis runs out of memory (`maxmemory` limit reached) and, due to the `noeviction` policy, starts rejecting write commands.
+This project demonstrates a high-severity Redis failure where the server reaches its `maxmemory` limit and, due to its effective memory policy (typically 'noeviction' by default when `maxmemory` is set), starts rejecting write commands.
 
 ## Description of Failure
 
-Redis is configured with a `--maxmemory` limit of 10MB and a `--maxmemory-policy` of `noeviction`. When data is written to Redis exceeding this limit, new write commands are rejected with an "(error) OOM command not allowed when used memory > 'maxmemory'" error. This can lead to application failures if not handled correctly.
+When Redis is configured with a `maxmemory` limit and its active memory policy prevents key eviction, any new commands attempting to write data that would exceed this limit will fail. The Redis server sends an "(error) OOM command not allowed when used memory > 'maxmemory'" error message back to the client attempting the write.
+
+This reproduction uses `redis-cli` (executed inside the Redis Docker container) as the client to demonstrate this behavior.
 
 ## Prerequisites
 
 * Docker
 * Docker Compose
-* `redis-cli` (can be installed locally or you can use `docker exec -it <container_name> redis-cli`)
 
-## Setup and Reproduction Steps
+## Reproduction Steps
 
-1.  **Clone this repository or create the files:**
-    * `docker-compose.yml`
-    * `force_memory.sh`
-    * `README.md` (this file)
+1.  **Clone this repository**
 
-2.  **Ensure `force_memory.sh` is executable:**
-    ```bash
-    chmod +x force_memory.sh
-    ```
-
-3.  **Start the Redis container:**
-    Open your terminal in the project directory (`redis-oom-repro/`) and run:
+2.  **Start the Redis Service:**
+    In your project directory, run:
     ```bash
     docker-compose up -d
     ```
-    Wait a few seconds for Redis to initialize. You can check the status with `docker-compose ps`.
+    Wait a few seconds for Redis to initialize.
 
-4.  **Run the reproduction script:**
-    This script will attempt to write data to Redis until the OOM error is triggered. Its output, including the error and Redis memory information, will be saved to `test.log`.
+3.  **Trigger the OOM Error:**
+    Execute the test script:
     ```bash
-    ./force_memory.sh > test.log 2>&1
+    ./run_oom_test.sh
     ```
 
-5.  **Observe the failure:**
-    Inspect the generated `test.log`. You should see output similar to:
-    ```
-    Attempting to force Redis OOM...
-    OK
-    (error) OOM command not allowed when used memory > 'maxmemory'. script: ..., on @user_script:1.
-    # Memory
-    used_memory_human:10.02M 
-    maxmemory_human:10.00M
-    maxmemory_policy:noeviction
-    ...
-    Script finished. Check output for OOM errors.
-    ```
-    The key line is `(error) OOM command not allowed when used memory > 'maxmemory'`.
+## Expected Outcome & Example Log (`test.log`)
 
-6.  **Check Redis Server Logs (Optional):**
-    To see the server-side perspective, you can view the Redis container's logs:
-    ```bash
-    docker-compose logs redis 
-    ```
-    (Or `docker logs <container_id_or_name>` if you prefer)
-    With `loglevel verbose`, you might see entries related to memory limits or command processing.
+The `run_oom_test.sh` script will:
+* Execute a series of commands against the Redis server using `redis-cli` (running inside the Docker container).
+* Display the interaction on your console.
+* Create/overwrite a file named `test.log` in the same directory. This file will contain **only the timestamped output from the `redis-cli` client session**, capturing the commands sent and the direct responses (including errors) from the Redis server.
 
-## Deliverables
-
-* **Reproduction Setup:** The files in this directory (`docker-compose.yml`, `force_memory.sh`).
-* **Example Logs:** See `test.log` for the captured output demonstrating the failure.
-* **Detection Rule (CRE Playground Link):**
-    [Link to your rule in the CRE playground will go here] 
-    *(Example idea for detection: Look for "OOM command not allowed" messages in logs, or monitor if `used_memory` consistently equals `maxmemory` with `noeviction` policy and `rejected_commands` count increases).*
-
-## Cleanup
-
-To stop and remove the Redis container and associated volume:
-```bash
-docker-compose down -v# cre-2025-0070-setup
+You should see an error similar to the following in your console output and within `test.log` (timestamps will vary):
